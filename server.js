@@ -88,6 +88,7 @@ const server = http.createServer(async (req, res) => {
     const status = url.searchParams.get('status');
 
     if (status === null) {
+      // return after each sendJson prevent the code from going to the next sendJson.
       sendJson(res, 200, books);
       return;
     }
