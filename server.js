@@ -2,6 +2,7 @@ import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 
 const PORT = 3000;
+const MAX_BODY_BYTES = 100 * 1024; // 100 KB is plenty for a book
 
 const books = [
   {
@@ -31,14 +32,40 @@ function sendJson(res, status, data) {
   res.end(JSON.stringify(data) + '\n');
 }
 
+// An error that already knows which HTTP status to answer with.
+class HttpError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
 // req is a stream (body comes over the network in several pieces, called chunks). Node doesn't wait for all of them. Instead it gives you events:
 // - 'data' fires for each chunk, and we add it to body.
 // - 'end' fires when the last chunk has arrived, so the body is complete.
 // - 'error' fires if something breaks, for example the client disconnects.
 function readBody(req) {
   return new Promise((resolve, reject) => {
+    // Content-Length is the size the client announces. If it's already too big,
+    // reject before reading a single byte.
+    const declared = Number(req.headers['content-length']);
+    if (declared > MAX_BODY_BYTES) {
+      reject(new HttpError(413, 'Request body too large'));
+      return;
+    }
+
+    // The header is optional and could lie, so we also count the real bytes.
     let body = '';
+    let size = 0;
+    let tooLarge = false;
     req.on('data', (chunk) => {
+      if (tooLarge) return; // ignore the rest, don't keep it in memory
+      size += chunk.length;
+      if (size > MAX_BODY_BYTES) {
+        tooLarge = true;
+        reject(new HttpError(413, 'Request body too large'));
+        return;
+      }
       body += chunk;
     });
     req.on('end', () => resolve(body));
@@ -78,7 +105,7 @@ function validateBook(input, { partial = false } = {}) {
   return null;
 }
 
-const server = http.createServer(async (req, res) => {
+async function handleRequest(req, res) {
   console.log(`${req.method} ${req.url}`);
 
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -184,6 +211,33 @@ const server = http.createServer(async (req, res) => {
   }
 
   sendJson(res, 404, { error: 'Not found' });
+}
+
+// Every request goes through this try/catch, so a thrown error (or a rejected
+// promise we awaited) becomes an error response instead of crashing the server.
+const server = http.createServer(async (req, res) => {
+  try {
+    await handleRequest(req, res);
+  } catch (err) {
+    // The response was already started, so we can't send a new status. Just close it.
+    if (res.headersSent) {
+      res.destroy();
+      return;
+    }
+
+    if (err instanceof HttpError) {
+      if (err.status === 413) {
+        // Close the connection instead of waiting for the rest of a huge body.
+        res.setHeader('Connection', 'close');
+      }
+      sendJson(res, err.status, { error: err.message });
+      return;
+    }
+
+    // Unexpected error: log the details for us, but don't leak them to the client.
+    console.error(err);
+    sendJson(res, 500, { error: 'Internal server error' });
+  }
 });
 
 server.listen(PORT, () => {
