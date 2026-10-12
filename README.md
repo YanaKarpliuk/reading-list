@@ -24,6 +24,19 @@ The server runs at http://localhost:3000.
 | ------------- | ------------------------------------ |
 | `npm run dev` | Starts the server in watch mode      |
 | `npm start`   | Starts the server without watching   |
+| `npm run dev:express`   | Starts the Express version in watch mode    |
+| `npm run start:express` | Starts the Express version without watching |
+
+### Two versions of the same API
+
+- `server.js`: plain Node.js (`node:http`), no dependencies
+- `server-express.js`: the same API rewritten with [Express 5](https://expressjs.com/)
+
+Both use port 3000, so run one at a time. They behave the same, with these differences in the Express version:
+
+- Request bodies must be sent with `-H 'Content-Type: application/json'`. Without it, the body is not parsed and you get `400 Body must be a JSON object`.
+- Unsupported methods on `/books/:id` (e.g. `PUT`) return `405 Method Not Allowed` with an `Allow` header instead of `404`.
+- Responses don't end with a newline. Use `curl -w '\n'` if your prompt ends up on the same line.
 
 ## Data model
 
