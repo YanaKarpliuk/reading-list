@@ -1,88 +1,15 @@
-import http from 'node:http';
-import { randomUUID } from 'node:crypto';
+import express from 'express';
+import { pool } from './db.js';
 
 const PORT = 3000;
-const MAX_BODY_BYTES = 100 * 1024; // 100 KB is plenty for a book
-
-const books = [
-  {
-    id: randomUUID(),
-    title: 'The Hobbit',
-    author: 'J.R.R. Tolkien',
-    status: 'done',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: randomUUID(),
-    title: 'Dune',
-    author: 'Frank Herbert',
-    status: 'reading',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: randomUUID(),
-    title: 'Clean Code',
-    status: 'want',
-    createdAt: new Date().toISOString(),
-  },
-];
-
-function sendJson(res, status, data) {
-  res.writeHead(status, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(data) + '\n');
-}
-
-// An error that already knows which HTTP status to answer with.
-class HttpError extends Error {
-  constructor(status, message) {
-    super(message);
-    this.status = status;
-  }
-}
-
-// req is a stream (body comes over the network in several pieces, called chunks). Node doesn't wait for all of them. Instead it gives you events:
-// - 'data' fires for each chunk, and we add it to body.
-// - 'end' fires when the last chunk has arrived, so the body is complete.
-// - 'error' fires if something breaks, for example the client disconnects.
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    // Content-Length is the size the client announces. If it's already too big,
-    // reject before reading a single byte.
-    const declared = Number(req.headers['content-length']);
-    if (declared > MAX_BODY_BYTES) {
-      reject(new HttpError(413, 'Request body too large'));
-      return;
-    }
-
-    // The header is optional and could lie, so we also count the real bytes.
-    let body = '';
-    let size = 0;
-    let tooLarge = false;
-    req.on('data', (chunk) => {
-      if (tooLarge) return; // ignore the rest, don't keep it in memory
-      size += chunk.length;
-      if (size > MAX_BODY_BYTES) {
-        tooLarge = true;
-        reject(new HttpError(413, 'Request body too large'));
-        return;
-      }
-      body += chunk;
-    });
-    req.on('end', () => resolve(body));
-    req.on('error', reject);
-  });
-}
-
 const STATUSES = ['want', 'reading', 'done'];
 
-// Returns the parsed value, or undefined if the text isn't valid JSON.
-function parseJson(text) {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return undefined;
-  }
-}
+// The columns every query returns. The database uses snake_case (created_at),
+// the API uses camelCase (createdAt), so we rename it with AS.
+// Double quotes keep the capital C; without them Postgres would lowercase it.
+const BOOK_COLUMNS = 'id, title, author, status, created_at AS "createdAt"';
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Returns an error message, or null if the input is valid.
 // With partial: true (for PATCH), title may be left out.
@@ -105,141 +32,162 @@ function validateBook(input, { partial = false } = {}) {
   return null;
 }
 
-async function handleRequest(req, res) {
+const app = express();
+
+// ---------- Middleware: runs for every request, in this order ----------
+
+// Log every request.
+app.use((req, res, next) => {
   console.log(`${req.method} ${req.url}`);
-
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  const path = url.pathname;
-
-  if (req.method === 'GET' && (path === '/' || path === '/books')) {
-    const status = url.searchParams.get('status');
-
-    if (status === null) {
-      // return after each sendJson prevent the code from going to the next sendJson.
-      sendJson(res, 200, books);
-      return;
-    }
-
-    if (!STATUSES.includes(status)) {
-      sendJson(res, 400, { error: `status must be one of: ${STATUSES.join(', ')}` });
-      return;
-    }
-
-    sendJson(res, 200, books.filter((b) => b.status === status));
-    return;
-  }
-
-  if (req.method === 'POST' && path === '/books') {
-    // wait until the promise resolves
-    const body = await readBody(req);
-
-    const input = parseJson(body);
-    if (input === undefined) {
-      sendJson(res, 400, { error: 'Invalid JSON' });
-      return;
-    }
-
-    const error = validateBook(input);
-    if (error) {
-      sendJson(res, 400, { error });
-      return;
-    }
-
-    const book = {
-      id: randomUUID(),
-      title: input.title.trim(),
-      status: input.status ?? 'want',
-      createdAt: new Date().toISOString(),
-    };
-    if (input.author !== undefined) {
-      book.author = input.author;
-    }
-
-    books.push(book);
-    sendJson(res, 201, book);
-    return;
-  }
-
-  const parts = path.split('/').filter(Boolean);
-
-  if (
-    parts.length === 2 &&
-    parts[0] === 'books' &&
-    ['GET', 'PATCH', 'DELETE'].includes(req.method)
-  ) {
-    const id = parts[1];
-    const index = books.findIndex((b) => b.id === id);
-
-    if (index === -1) {
-      sendJson(res, 404, { error: 'Book not found' });
-      return;
-    }
-
-    const book = books[index];
-
-    if (req.method === 'GET') {
-      sendJson(res, 200, book);
-      return;
-    }
-
-    if (req.method === 'PATCH') {
-      const input = parseJson(await readBody(req));
-      if (input === undefined) {
-        sendJson(res, 400, { error: 'Invalid JSON' });
-        return;
-      }
-
-      const error = validateBook(input, { partial: true });
-      if (error) {
-        sendJson(res, 400, { error });
-        return;
-      }
-
-      if (input.title !== undefined) book.title = input.title.trim();
-      if (input.author !== undefined) book.author = input.author;
-      if (input.status !== undefined) book.status = input.status;
-
-      sendJson(res, 200, book);
-      return;
-    }
-
-    // DELETE
-    books.splice(index, 1);
-    res.writeHead(204);
-    res.end();
-    return;
-  }
-
-  sendJson(res, 404, { error: 'Not found' });
-}
-
-// Every request goes through this try/catch, so a thrown error (or a rejected
-// promise we awaited) becomes an error response instead of crashing the server.
-const server = http.createServer(async (req, res) => {
-  try {
-    await handleRequest(req, res);
-  } catch (err) {
-    // The response was already started, so we can't send a new status. Just close it.
-    if (res.headersSent) {
-      res.destroy();
-      return;
-    }
-
-    if (err instanceof HttpError) {
-      if (err.status === 413) {
-        // Close the connection instead of waiting for the rest of a huge body.
-        res.setHeader('Connection', 'close');
-      }
-      sendJson(res, err.status, { error: err.message });
-      return;
-    }
-
-    // Unexpected error: log the details for us, but don't leak them to the client.
-    console.error(err);
-    sendJson(res, 500, { error: 'Internal server error' });
-  }
+  next();
 });
 
-server.listen(PORT, () => {
-  console.log(`Server listening on http://localhost:${PORT}`);
+// Read the body and parse it as JSON (replaces readBody + parseJson).
+// Only runs when the request has Content-Type: application/json.
+app.use(express.json({ limit: '100kb' }));
+
+// ---------- Routes ----------
+
+app.get(['/', '/books'], async (req, res) => {
+  const { status } = req.query;
+
+  if (status === undefined) {
+    const result = await pool.query(`SELECT ${BOOK_COLUMNS} FROM books ORDER BY created_at`);
+    res.json(result.rows);
+    return;
+  }
+
+  // ?status=a&status=b gives an array, so check the type too.
+  if (typeof status !== 'string' || !STATUSES.includes(status)) {
+    res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
+    return;
+  }
+
+  const result = await pool.query(
+    `SELECT ${BOOK_COLUMNS} FROM books WHERE status = $1 ORDER BY created_at`,
+    [status],
+  );
+  res.json(result.rows);
+});
+
+app.post('/books', async (req, res) => {
+  const error = validateBook(req.body);
+  if (error) {
+    res.status(400).json({ error });
+    return;
+  }
+
+  const { title, author, status } = req.body;
+  const result = await pool.query(
+    `INSERT INTO books (title, author, status)
+     VALUES ($1, $2, $3)
+     RETURNING ${BOOK_COLUMNS}`,
+    [title.trim(), author ?? null, status ?? 'want'],
+  );
+  res.status(201).json(result.rows[0]);
+});
+
+// An id that isn't a UUID can't exist in the table. Answer 404 right away,
+// otherwise Postgres would reject it with an error and we'd send a 500.
+function checkId(req, res, next) {
+  if (!UUID_PATTERN.test(req.params.id)) {
+    res.status(404).json({ error: 'Book not found' });
+    return;
+  }
+  next();
+}
+
+app
+  .route('/books/:id')
+  .all(checkId)
+  .get(async (req, res) => {
+    const result = await pool.query(`SELECT ${BOOK_COLUMNS} FROM books WHERE id = $1`, [
+      req.params.id,
+    ]);
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: 'Book not found' });
+      return;
+    }
+    res.json(result.rows[0]);
+  })
+  .patch(async (req, res) => {
+    const error = validateBook(req.body, { partial: true });
+    if (error) {
+      res.status(400).json({ error });
+      return;
+    }
+
+    // COALESCE(a, b) returns a, or b if a is NULL. So a field that wasn't sent
+    // (passed as NULL) keeps its current value.
+    const { title, author, status } = req.body;
+    const result = await pool.query(
+      `UPDATE books
+       SET title  = COALESCE($2, title),
+           author = COALESCE($3, author),
+           status = COALESCE($4, status)
+       WHERE id = $1
+       RETURNING ${BOOK_COLUMNS}`,
+      [req.params.id, title?.trim() ?? null, author ?? null, status ?? null],
+    );
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: 'Book not found' });
+      return;
+    }
+    res.json(result.rows[0]);
+  })
+  .delete(async (req, res) => {
+    const result = await pool.query('DELETE FROM books WHERE id = $1', [req.params.id]);
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: 'Book not found' });
+      return;
+    }
+    // sends a 204 with no body.
+    res.status(204).end();
+  })
+  .all((req, res) => {
+    res.set('Allow', 'GET, PATCH, DELETE');
+    res.status(405).json({ error: 'Method not allowed' });
+  });
+
+// ---------- Fallbacks: only reached if nothing above responded ----------
+
+// No route matched.
+// It must come after all the routes
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
+// Error handler: Express recognizes it by the 4 parameters.
+// It receives anything thrown in a route, errors from express.json(),
+// and failed database queries.
+app.use((err, req, res, next) => {
+  if (res.headersSent) {
+    next(err); // let Express close the broken response
+    return;
+  }
+  if (err.type === 'entity.parse.failed') {
+    res.status(400).json({ error: 'Invalid JSON' });
+    return;
+  }
+  if (err.type === 'entity.too.large') {
+    res.set('Connection', 'close');
+    res.status(413).json({ error: 'Request body too large' });
+    return;
+  }
+
+  console.error(err);
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+// Check the database connection before accepting requests, so a wrong
+// password or a stopped database shows up immediately, not on the first request.
+try {
+  await pool.query('SELECT 1');
+} catch (err) {
+  console.error(`Cannot connect to the database: ${err.message}`);
+  process.exit(1);
+}
+
+app.listen(PORT, () => {
+  console.log(`Express server listening on http://localhost:${PORT}`);
 });
