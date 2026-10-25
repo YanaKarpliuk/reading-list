@@ -1,22 +1,21 @@
 # Reading List API
 
 A small REST API for keeping track of books you want to read, are reading, or have finished.
-Built with [Express 5](https://expressjs.com/) and PostgreSQL as a learning project.
+Built with [NestJS 12](https://nestjs.com/), TypeScript and PostgreSQL as a learning project.
+
+Earlier versions of the same API are kept on their own branches:
+
+| Branch                    | Version                                   |
+| ------------------------- | ----------------------------------------- |
+| `v1.0.0-http-express`     | Plain Node.js (`node:http`) and Express, in-memory data |
+| `v2.0.0-express-postgres` | Express with PostgreSQL                   |
+| `v3.0.0-nest`             | NestJS with PostgreSQL (this version)     |
 
 ## Requirements
 
-- Node.js **20.6 or newer** (for `node --env-file`). The project pins Node 24 in `.nvmrc`.
+- Node.js 24 (pinned in `.nvmrc`)
 - PostgreSQL
 - `curl` for trying out requests. `jq` is optional, for pretty output.
-
-## Project structure
-
-| File            | What it does                                          |
-| --------------- | ----------------------------------------------------- |
-| `server.js`     | The Express app: middleware, routes, error handling   |
-| `db.js`         | The PostgreSQL connection pool                        |
-| `db/schema.sql` | Creates the `books` table                             |
-| `.env.example`  | Template for `.env`, which holds the connection string |
 
 ## Database setup
 
@@ -26,8 +25,7 @@ psql reading_list -f db/schema.sql         # create the books table
 cp .env.example .env                       # then fill in DATABASE_URL in .env
 ```
 
-`.env` holds `DATABASE_URL`, which the npm scripts load with `node --env-file=.env`.
-It is in `.gitignore`, so the password is never committed.
+`.env` is read by `ConfigModule` at startup. It is in `.gitignore`, so the password is never committed.
 
 There are two ways to connect:
 
@@ -45,58 +43,95 @@ psql "$(grep '^DATABASE_URL' .env | cut -d= -f2-)" -c 'SELECT count(*) FROM book
 ## Getting started
 
 ```bash
-nvm use        # switch to the Node version from .nvmrc
-npm run dev    # start the server and restart it on every file save
+nvm use
+npm install
+npm run start:dev        # compile, start, and restart on every file save
 ```
 
-The server runs at http://localhost:3000. If it can't reach the database, it stops
-right away with `Cannot connect to the database: ...`.
+The server runs at http://localhost:3000 (set `PORT` in `.env` to change it). If it can't reach
+the database, or `DATABASE_URL` is missing, it stops right away with an error.
 
-| Script        | What it does                         |
-| ------------- | ------------------------------------ |
-| `npm run dev` | Starts the server in watch mode      |
-| `npm start`   | Starts the server without watching   |
+| Script               | What it does                                     |
+| -------------------- | ------------------------------------------------ |
+| `npm run start:dev`  | Compiles and starts in watch mode                |
+| `npm run start`      | Compiles and starts once                         |
+| `npm run build`      | Compiles TypeScript from `src/` into `dist/`     |
+| `npm run start:prod` | Runs the compiled app from `dist/` (build first) |
+| `npm run lint`       | Checks the code with oxlint                      |
+| `npm run format`     | Formats the code with Prettier                   |
 
-Books are stored in PostgreSQL, so they survive server restarts.
+## Project structure
+
+```
+db/
+└── schema.sql                      Creates the books table
+src/
+├── main.ts                         Bootstrap: create the app, global ValidationPipe, listen
+├── app.module.ts                   Root module: ConfigModule, DatabaseModule, BooksModule
+├── database/
+│   └── database.module.ts          Provides the pg Pool under the PG_POOL token
+└── books/
+    ├── books.module.ts             Groups the books controller and service
+    ├── books.controller.ts         HTTP routes → service calls
+    ├── books.service.ts            SQL queries, throws NotFoundException
+    ├── book.ts                     Book type and STATUSES
+    └── dto/
+        ├── create-book.dto.ts      Validation rules for POST
+        ├── update-book.dto.ts      Same rules, all optional (PATCH)
+        └── list-books-query.dto.ts Validation for ?status=
+```
 
 ## Data model
 
-| Field       | Type           | Notes                                                    |
-| ----------- | -------------- | -------------------------------------------------------- |
-| `id`        | string         | UUID, set by the database                                |
-| `title`     | string         | **Required**, must not be empty                          |
-| `author`    | string \| null | Optional. `null` when not set                            |
-| `status`    | string         | One of `want`, `reading`, `done`. Defaults to `want`     |
-| `createdAt` | string         | ISO 8601 date, set by the database                       |
+| Field       | Type           | Notes                                                |
+| ----------- | -------------- | ---------------------------------------------------- |
+| `id`        | string         | UUID, set by the database                            |
+| `title`     | string         | **Required**, must not be empty (spaces are trimmed) |
+| `author`    | string \| null | Optional. `null` when not set                        |
+| `status`    | string         | One of `want`, `reading`, `done`. Defaults to `want` |
+| `createdAt` | string         | ISO 8601 date, set by the database                   |
 
-`id` and `createdAt` are always generated by the database. If a client sends them, they are ignored.
-In the database the column is called `created_at`; the API renames it to `createdAt`.
+`id` and `createdAt` are always generated by the database. If a client sends them, or any other
+unknown field, they are removed before the request reaches the code. In the database the column
+is called `created_at`; the API renames it to `createdAt`.
+
+For optional fields, `null` counts as "not sent": `"author": null` on POST creates a book without
+an author, and `"title": null` on PATCH leaves the title unchanged.
 
 ## Endpoints
 
-| Method   | Path                   | Description                    | Success          |
-| -------- | ---------------------- | ------------------------------ | ---------------- |
-| `GET`    | `/books`               | List all books                 | `200`            |
-| `GET`    | `/books?status=<s>`    | List books with a given status | `200`            |
-| `GET`    | `/books/:id`           | Get one book                   | `200`            |
-| `POST`   | `/books`               | Create a book                  | `201`            |
-| `PATCH`  | `/books/:id`           | Update some fields of a book   | `200`            |
-| `DELETE` | `/books/:id`           | Delete a book                  | `204` (no body)  |
+| Method   | Path                | Description                    | Success         |
+| -------- | ------------------- | ------------------------------ | --------------- |
+| `GET`    | `/books`            | List all books                 | `200`           |
+| `GET`    | `/books?status=<s>` | List books with a given status | `200`           |
+| `GET`    | `/books/:id`        | Get one book                   | `200`           |
+| `POST`   | `/books`            | Create a book                  | `201`           |
+| `PATCH`  | `/books/:id`        | Update some fields of a book   | `200`           |
+| `DELETE` | `/books/:id`        | Delete a book                  | `204` (no body) |
 
-`GET /` returns the same list as `GET /books` and also accepts `?status=`.
+Request bodies must be JSON and sent with `Content-Type: application/json`. Without that header
+the body is not parsed, and you get a `400` because `title` is missing.
 
-Request bodies must be JSON and sent with `Content-Type: application/json`. Without that
-header the body is not parsed, and you get `400 Body must be a JSON object`.
+## Errors
 
-Errors are returned as JSON: `{ "error": "message" }`.
+Errors use Nest's standard format. Validation errors list every problem in `message`:
 
-| Status | When                                                              |
-| ------ | ----------------------------------------------------------------- |
-| `400`  | Invalid JSON, a failed validation, or an unknown `status` filter  |
-| `404`  | Unknown book ID or unknown route                                  |
-| `405`  | Unsupported method on `/books/:id` (e.g. `PUT`), with an `Allow` header |
-| `413`  | Request body larger than 100 KB                                   |
-| `500`  | Unexpected server or database error                               |
+```json
+{ "message": ["title should not be empty", "title must be a string"], "error": "Bad Request", "statusCode": 400 }
+```
+
+Other errors have a single message:
+
+```json
+{ "message": "Book not found", "error": "Not Found", "statusCode": 404 }
+```
+
+| Status | When                                                                  |
+| ------ | --------------------------------------------------------------------- |
+| `400`  | Invalid JSON, a failed validation, an unknown `status` filter, or an ID that isn't a UUID |
+| `404`  | Unknown book ID, unknown route, or unsupported method (e.g. `PUT`)    |
+| `413`  | Request body larger than 100 KB                                       |
+| `500`  | Unexpected server or database error                                   |
 
 ## Using the API with curl
 
@@ -141,7 +176,7 @@ An unknown status gives a `400`:
 
 ```bash
 curl -i "http://localhost:3000/books?status=banana"
-# {"error":"status must be one of: want, reading, done"}
+# {"message":["status must be one of the following values: want, reading, done"],"error":"Bad Request","statusCode":400}
 ```
 
 ### Create a book
@@ -214,8 +249,7 @@ Check that it's gone:
 
 ```bash
 curl -i http://localhost:3000/books/$ID
-# HTTP/1.1 404 Not Found
-# {"error":"Book not found"}
+# 404 {"message":"Book not found","error":"Not Found","statusCode":404}
 ```
 
 ### Error examples
@@ -226,7 +260,7 @@ Broken JSON:
 curl -i -X POST http://localhost:3000/books \
   -H 'Content-Type: application/json' \
   -d '{"title": "Dune",'
-# 400 {"error":"Invalid JSON"}
+# 400 {"message":"Unexpected end of JSON input","error":"Bad Request","statusCode":400}
 ```
 
 Empty title:
@@ -235,7 +269,7 @@ Empty title:
 curl -i -X POST http://localhost:3000/books \
   -H 'Content-Type: application/json' \
   -d '{"title": ""}'
-# 400 {"error":"title is required and must be a non-empty string"}
+# 400 {"message":["title should not be empty"],"error":"Bad Request","statusCode":400}
 ```
 
 Invalid status:
@@ -244,36 +278,28 @@ Invalid status:
 curl -i -X POST http://localhost:3000/books \
   -H 'Content-Type: application/json' \
   -d '{"title": "Dune", "status": "lost"}'
-# 400 {"error":"status must be one of: want, reading, done"}
+# 400 {"message":["status must be one of the following values: want, reading, done"],"error":"Bad Request","statusCode":400}
 ```
 
 Missing `Content-Type` header:
 
 ```bash
 curl -i -X POST http://localhost:3000/books -d '{"title": "Dune"}'
-# 400 {"error":"Body must be a JSON object"}
+# 400 {"message":["title should not be empty","title must be a string"],"error":"Bad Request","statusCode":400}
 ```
 
-Unknown ID:
+An ID that isn't a UUID:
 
 ```bash
 curl -i http://localhost:3000/books/made-up-id
-# 404 {"error":"Book not found"}
-```
-
-Unsupported method:
-
-```bash
-curl -i -X PUT http://localhost:3000/books/$ID
-# 405 Method Not Allowed
-# Allow: GET, PATCH, DELETE
+# 400 {"message":"Validation failed (uuid is expected)","error":"Bad Request","statusCode":400}
 ```
 
 Unknown route:
 
 ```bash
 curl -i http://localhost:3000/anything
-# 404 {"error":"Not found"}
+# 404 {"message":"Cannot GET /anything","error":"Not Found","statusCode":404}
 ```
 
 ## Working with the database directly

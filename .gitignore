@@ -1,6 +1,10 @@
 # Dependencies
 node_modules/
 
+# Build output (Nest compiles TypeScript into dist/)
+dist/
+*.tsbuildinfo
+
 # Environment variables (may contain secrets)
 .env
 .env.*
