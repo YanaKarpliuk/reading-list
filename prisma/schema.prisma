@@ -1,0 +1,29 @@
+// The Prisma schema: one place that describes the database tables.
+// `prisma generate` reads it and writes a typed client to src/generated/prisma.
+// `prisma migrate dev` compares it with the database and writes SQL migrations.
+
+generator client {
+  provider               = "prisma-client"
+  output                 = "../src/generated/prisma"
+  // Our TypeScript uses ES modules with "nodenext", so imports need ".js".
+  moduleFormat           = "esm"
+  importFileExtension    = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// The CHECK constraints (non-empty title, allowed statuses) can't be written
+// here. They live in the SQL of prisma/migrations/0_init/migration.sql.
+model Book {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title     String
+  author    String?
+  status    String   @default("want")
+  // @map: the field is createdAt in TypeScript, created_at in the database.
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // The model is called Book, the table is called books.
+  @@map("books")
+}

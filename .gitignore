@@ -5,6 +5,9 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# Prisma Client, generated from prisma/schema.prisma by `prisma generate`
+src/generated/
+
 # Environment variables (may contain secrets)
 .env
 .env.*
