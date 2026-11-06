@@ -1,12 +1,16 @@
+# This file covers both apps. A pattern without a slash in the middle (like
+# node_modules/) matches in every folder; one with a slash (like
+# backend/src/generated/) is relative to this file.
+
 # Dependencies
 node_modules/
 
-# Build output (Nest compiles TypeScript into dist/)
+# Build output (backend: Nest compiles into dist/, frontend: Vite builds into dist/)
 dist/
 *.tsbuildinfo
 
-# Prisma Client, generated from prisma/schema.prisma by `prisma generate`
-src/generated/
+# Prisma Client, generated from backend/prisma/schema.prisma by `prisma generate`
+backend/src/generated/
 
 # Environment variables (may contain secrets)
 .env

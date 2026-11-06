@@ -1,8 +1,11 @@
-# Reading List API
+# Reading List
 
-A small REST API for keeping track of books you want to read, are reading, or have finished.
-Built with [NestJS 12](https://nestjs.com/), TypeScript, PostgreSQL and the [Prisma](https://www.prisma.io/) ORM
-as a learning project.
+A small app for keeping track of books you want to read, are reading, or have finished, built
+as a learning project. It has two parts, each in its own folder:
+
+- `backend/`: a REST API with [NestJS 12](https://nestjs.com/), TypeScript, PostgreSQL and the
+  [Prisma](https://www.prisma.io/) ORM
+- `frontend/`: a web page with [Vue 3](https://vuejs.org/) and [Vite](https://vite.dev/) that uses the API
 
 Earlier versions of the same API are kept on their own branches:
 
@@ -10,17 +13,56 @@ Earlier versions of the same API are kept on their own branches:
 | ------------------------- | ----------------------------------------- |
 | `v1.0.0-http-express`     | Plain Node.js (`node:http`) and Express, in-memory data |
 | `v2.0.0-express-postgres` | Express with PostgreSQL                   |
-| `v3.0.0-nest`             | NestJS with PostgreSQL through Prisma (this version) |
+| `v3.0.0-nest`             | NestJS with PostgreSQL through Prisma     |
+| `v4.0.0-vue`              | The API in `backend/` plus a Vue frontend in `frontend/` (this version) |
 
 ## Requirements
 
-- Node.js 24 (pinned in `.nvmrc`)
+- Node.js 24 (pinned in `.nvmrc`; `nvm use` finds it from any folder in the project)
 - PostgreSQL
 - `curl` for trying out requests. `jq` is optional, for pretty output.
 
-## Database setup
+## Project structure
+
+`backend/` and `frontend/` are two separate npm projects. Each has its own `package.json`,
+`node_modules` and TypeScript config, so **run npm commands inside the folder of the app you mean**.
+The root only holds what both share:
+
+```
+.gitignore                          Ignore rules for both apps
+.gitattributes                      LF line endings everywhere
+.nvmrc                              Node version for both apps
+.prettierrc                         Code style for both apps (Prettier looks for it in parent folders)
+backend/                            The API, see below
+frontend/                           The Vue app, see below
+```
+
+## Quick start
 
 ```bash
+nvm use
+
+# terminal 1: the API on http://localhost:3000
+cd backend
+npm install
+npm run start:dev
+
+# terminal 2: the page on http://localhost:5173
+cd frontend
+npm install
+npm run dev
+```
+
+The first time, set up the database first (next section).
+
+## Backend
+
+All commands in this section run in `backend/`.
+
+### Database setup
+
+```bash
+cd backend
 cp .env.example .env                       # then fill in DATABASE_URL in .env
 createdb reading_list                      # create an empty database
 npm install                                # also runs `prisma generate`
@@ -28,7 +70,8 @@ npm run db:deploy                          # apply prisma/migrations: creates th
 ```
 
 `.env` is read by `ConfigModule` when the app starts, and by `prisma.config.ts` when you run the
-Prisma CLI. It is in `.gitignore`, so the password is never committed.
+Prisma CLI. Both look for it in the current folder, so start the API and run Prisma commands from
+`backend/`. It is in `.gitignore`, so the password is never committed.
 
 There are two ways to connect:
 
@@ -45,7 +88,7 @@ Check that the connection string works:
 psql "$(grep '^DATABASE_URL' .env | cut -d= -f2-)" -c 'SELECT count(*) FROM books;'
 ```
 
-### Already have a `books` table from the earlier versions?
+#### Already have a `books` table from the earlier versions?
 
 Then don't run `db:deploy`, because the table exists and `0_init` would fail. Tell Prisma that the
 first migration is already applied instead. This only records it in the `_prisma_migrations`
@@ -56,57 +99,110 @@ npx prisma migrate resolve --applied 0_init
 npx prisma migrate status                  # "Database schema is up to date!"
 ```
 
-## Getting started
+### Running the API
 
 ```bash
-nvm use
-npm install
+cd backend
 npm run start:dev        # compile, start, and restart on every file save
 ```
 
-The server runs at http://localhost:3000 (set `PORT` in `.env` to change it). If it can't reach
-the database, or `DATABASE_URL` is missing, it stops right away with an error.
+The server runs at http://localhost:3000 (set `PORT` in `backend/.env` to change it). If it can't
+reach the database, or `DATABASE_URL` is missing, it stops right away with an error.
 
-| Script               | What it does                                     |
-| -------------------- | ------------------------------------------------ |
-| `npm run start:dev`  | Compiles and starts in watch mode                |
-| `npm run start`      | Compiles and starts once                         |
-| `npm run build`      | Compiles TypeScript from `src/` into `dist/`     |
-| `npm run start:prod` | Runs the compiled app from `dist/` (build first) |
-| `npm run lint`       | Checks the code with oxlint                      |
-| `npm run format`     | Formats the code with Prettier                   |
-| `npm run db:migrate` | After editing `schema.prisma`: create and apply a new migration |
-| `npm run db:deploy`  | Apply migrations that haven't run yet            |
-| `npm run db:studio`  | Open Prisma Studio, a web UI for browsing the data |
-| `npx prisma generate`| Regenerate the client after editing `schema.prisma` (also runs on `npm install` and `npm run build`) |
+| Script (in `backend/`) | What it does                                     |
+| ---------------------- | ------------------------------------------------ |
+| `npm run start:dev`    | Compiles and starts in watch mode                |
+| `npm run start`        | Compiles and starts once                         |
+| `npm run build`        | Compiles TypeScript from `src/` into `dist/`     |
+| `npm run start:prod`   | Runs the compiled app from `dist/` (build first) |
+| `npm run lint`         | Checks the code with oxlint                      |
+| `npm run format`       | Formats the code with Prettier                   |
+| `npm run db:migrate`   | After editing `schema.prisma`: create and apply a new migration |
+| `npm run db:deploy`    | Apply migrations that haven't run yet            |
+| `npm run db:studio`    | Open Prisma Studio, a web UI for browsing the data |
+| `npx prisma generate`  | Regenerate the client after editing `schema.prisma` (also runs on `npm install` and `npm run build`) |
 
-## Project structure
+### Backend files
 
 ```
-prisma.config.ts                    Prisma CLI settings: schema path, migrations path, DATABASE_URL
-prisma/
-├── schema.prisma                   The Book model; the source for the generated client
-└── migrations/
-    └── 0_init/migration.sql        Creates the books table (with hand-added CHECK constraints)
-src/
-├── main.ts                         Bootstrap: create the app, global ValidationPipe, listen
-├── app.module.ts                   Root module: ConfigModule, PrismaModule, BooksModule
-├── generated/prisma/               Prisma Client, generated by `prisma generate` (not in git)
+backend/
+├── .env.example                    Template for .env (DATABASE_URL, PORT)
+├── package.json                    Dependencies and scripts of the API
+├── nest-cli.json                   Nest CLI settings (source folder: src)
+├── tsconfig.json                   TypeScript settings; tsconfig.build.json is used by `nest build`
+├── vitest.config.ts                Unit test settings (*.spec.ts); vitest.config.e2e.ts for e2e
+├── .oxlintrc.json                  Lint rules
+├── prisma.config.ts                Prisma CLI settings: schema path, migrations path, DATABASE_URL
 ├── prisma/
-│   ├── prisma.module.ts            Global module that provides PrismaService
-│   └── prisma.service.ts           PrismaClient as a Nest provider: connects, checks, disconnects
-└── books/
-    ├── books.module.ts             Groups the books controller and service
-    ├── books.controller.ts         HTTP routes → service calls
-    ├── books.service.ts            Prisma queries, throws NotFoundException
-    ├── book.ts                     STATUSES and the BookStatus type
-    └── dto/
-        ├── create-book.dto.ts      Validation rules for POST
-        ├── update-book.dto.ts      Same rules, all optional (PATCH)
-        └── list-books-query.dto.ts Validation for ?status=
+│   ├── schema.prisma               The Book model; the source for the generated client
+│   └── migrations/
+│       └── 0_init/migration.sql    Creates the books table (with hand-added CHECK constraints)
+└── src/
+    ├── main.ts                     Bootstrap: create the app, global ValidationPipe, listen
+    ├── app.module.ts               Root module: ConfigModule, PrismaModule, BooksModule
+    ├── generated/prisma/           Prisma Client, generated by `prisma generate` (not in git)
+    ├── prisma/
+    │   ├── prisma.module.ts        Global module that provides PrismaService
+    │   └── prisma.service.ts       PrismaClient as a Nest provider: connects, checks, disconnects
+    └── books/
+        ├── books.module.ts         Groups the books controller and service
+        ├── books.controller.ts     HTTP routes → service calls
+        ├── books.service.ts        Prisma queries, throws NotFoundException
+        ├── book.ts                 STATUSES and the BookStatus type
+        └── dto/
+            ├── create-book.dto.ts  Validation rules for POST
+            ├── update-book.dto.ts  Same rules, all optional (PATCH)
+            └── list-books-query.dto.ts  Validation for ?status=
+```
+
+## Frontend
+
+All commands in this section run in `frontend/`. Start the API first (see above), then:
+
+```bash
+cd frontend
+npm install              # first time only
+npm run dev              # http://localhost:5173
+```
+
+Open http://localhost:5173. You can add books, filter them by status, change a book's status, and
+delete books.
+
+The page calls `/api/books` on its own origin, and the Vite dev server forwards those requests to
+the API at http://localhost:3000 (`server.proxy` in `frontend/vite.config.ts` removes `/api`, so
+`/api/books` becomes `/books`). The browser only talks to one origin, so the API needs no CORS
+setup. The API has to be running, otherwise the page shows "Could not load books".
+
+| Script (in `frontend/`) | What it does                                          |
+| ----------------------- | ----------------------------------------------------- |
+| `npm run dev`           | Starts the Vite dev server with hot reload            |
+| `npm run type-check`    | Type-checks `.ts` and `.vue` files with `vue-tsc`     |
+| `npm run build`         | Type-checks and builds static files into `dist/`      |
+| `npm run preview`       | Serves the built `dist/` locally (no API proxy)       |
+| `npm run format`        | Formats the code with Prettier                        |
+
+### Frontend files
+
+```
+frontend/
+├── index.html                      The page; Vue renders into <div id="app">
+├── package.json                    Dependencies and scripts of the frontend
+├── vite.config.ts                  Vue plugin, DevTools, `@` alias, /api proxy to :3000
+├── tsconfig.json                   Points to tsconfig.app.json (src/) and tsconfig.node.json (vite.config.ts)
+└── src/
+    ├── main.ts                     createApp(App).mount('#app'), global CSS
+    ├── style.css                   Global styles and colors (light and dark)
+    ├── types.ts                    Book type and statuses, matching the API
+    ├── api.ts                      fetch wrappers for the endpoints, Nest error messages
+    ├── App.vue                     Owns the list of books: loading, filters, counts
+    └── components/
+        ├── BookForm.vue            Form to add a book (v-model, emits `created`)
+        └── BookItem.vue            One book: change status, delete (props in, events out)
 ```
 
 ## Changing the database schema
+
+In `backend/`:
 
 1. Edit `prisma/schema.prisma`, for example add `rating Int?` to `Book`.
 2. Run `npm run db:migrate -- --name add-rating`. Prisma compares the schema with the database,
@@ -350,9 +446,9 @@ Useful `psql` commands: `\dt` (list tables), `\d books` (describe the table), `\
 SELECT * FROM books ORDER BY created_at;
 ```
 
-Or browse and edit the data in the browser with `npm run db:studio`.
+Or browse and edit the data in the browser with `npm run db:studio` (in `backend/`).
 
-To start over with an empty table (this deletes all books):
+To start over with an empty table (this deletes all books), in `backend/`:
 
 ```bash
 npx prisma migrate reset
