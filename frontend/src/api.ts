@@ -1,4 +1,4 @@
-import type { Book, NewBook } from './types';
+import type { Book, NewBook, Sort } from './types';
 
 // Requests go to our own origin; Vite forwards /api to Nest (vite.config.ts).
 const BASE_URL = '/api/books';
@@ -40,8 +40,14 @@ export function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-export function listBooks(): Promise<Book[]> {
-  return request<Book[]>('');
+export function listBooks(
+  params: { q?: string; sort?: Sort } = {},
+): Promise<Book[]> {
+  const search = new URLSearchParams();
+  if (params.q) search.set('q', params.q);
+  if (params.sort) search.set('sort', params.sort);
+  const qs = search.toString();
+  return request<Book[]>(qs ? `?${qs}` : '');
 }
 
 export function createBook(book: NewBook): Promise<Book> {

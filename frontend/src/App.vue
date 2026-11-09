@@ -1,9 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, watch, onMounted, ref } from 'vue';
 import BookForm from '@/components/BookForm.vue';
 import BookItem from '@/components/BookItem.vue';
 import { errorText, listBooks } from '@/api';
-import { STATUSES, STATUS_LABELS, type Book, type BookStatus } from '@/types';
+import {
+  STATUSES,
+  STATUS_LABELS,
+  type Book,
+  type BookStatus,
+  type Sort,
+} from '@/types';
+import BookSearch from '@/components/BookSearch.vue';
 
 type Filter = BookStatus | 'all';
 const FILTERS: Filter[] = ['all', ...STATUSES];
@@ -15,9 +22,14 @@ const loading = ref(true);
 const loadError = ref<string | null>(null);
 const filter = ref<Filter>('all');
 
-// Filtering happens here in the browser: we already have every book, and
-// the counts on the buttons need them all anyway. (The API also supports
-// GET /books?status=..., which would be the choice for a very long list.)
+const q = ref('');
+const sort = ref<Sort>('createdAt');
+
+// Search and sort run on the server: changing q or sort reloads `books`
+// (see the watch below). The status filter runs here in the browser on top
+// of that result, so the counts on the buttons count the search results.
+// (The API also supports GET /books?status=..., which would be the choice
+// for a very long list.)
 const visibleBooks = computed(() =>
   filter.value === 'all'
     ? books.value
@@ -35,27 +47,40 @@ const counts = computed(() => {
   return result;
 });
 
+// Each call gets a number. Responses can arrive out of order (the request
+// for "du" may finish after the one for "dune"), so only the newest call may
+// change the state; older ones return without touching anything.
+let latestRequest = 0;
+
 async function loadBooks() {
+  const requestId = ++latestRequest;
+
   loading.value = true;
   loadError.value = null;
   try {
-    books.value = await listBooks();
+    const result = await listBooks({ q: q.value.trim(), sort: sort.value });
+    if (requestId !== latestRequest) return;
+    books.value = result;
   } catch (err) {
+    if (requestId !== latestRequest) return;
     loadError.value = errorText(err);
   } finally {
-    loading.value = false;
+    if (requestId === latestRequest) loading.value = false;
   }
 }
 
 // Lifecycle hook: runs once the component is on the page.
 onMounted(loadBooks);
 
-// The handlers just update local state with what the server returned.
-// Vue sees the array change and re-renders the list.
-function onCreated(book: Book) {
-  books.value.push(book);
+// A new book may not match the current search, and its place depends on
+// the sort, so let the server decide: reload the list.
+function onCreated() {
+  loadBooks();
 }
 
+// Updates and deletes don't change what matches or the order, so the
+// handlers just update local state with what the server returned.
+// Vue sees the array change and re-renders the list.
 function onUpdated(book: Book) {
   const index = books.value.findIndex((b) => b.id === book.id);
   if (index !== -1) books.value[index] = book;
@@ -64,6 +89,14 @@ function onUpdated(book: Book) {
 function onDeleted(id: string) {
   books.value = books.value.filter((b) => b.id !== id);
 }
+
+// Debounce: wait until the user stops typing for 300 ms, then load once,
+// instead of sending a request for every key press.
+let timer: ReturnType<typeof setTimeout> | undefined;
+watch([q, sort], () => {
+  clearTimeout(timer);
+  timer = setTimeout(loadBooks, 300);
+});
 </script>
 
 <template>
@@ -85,11 +118,18 @@ function onDeleted(id: string) {
       </button>
     </nav>
 
+    <BookSearch v-model:q="q" v-model:sort="sort" />
+
     <!-- v-if / v-else-if / v-else: exactly one of these is shown. -->
-    <p v-if="loading" class="muted">Loading…</p>
+    <!-- "Loading…" only on the first load. While searching, the old results
+         stay visible until the new ones arrive, so the list doesn't flicker. -->
+    <p v-if="loading && books.length === 0" class="muted">Loading…</p>
     <p v-else-if="loadError" class="error">
       Could not load books: {{ loadError }}
       <button @click="loadBooks">Try again</button>
+    </p>
+    <p v-else-if="q.trim() && visibleBooks.length === 0" class="muted">
+      No match.
     </p>
     <p v-else-if="visibleBooks.length === 0" class="muted">
       No books here yet.

@@ -152,7 +152,7 @@ backend/
         └── dto/
             ├── create-book.dto.ts  Validation rules for POST
             ├── update-book.dto.ts  Same rules, all optional (PATCH)
-            └── list-books-query.dto.ts  Validation for ?status=
+            └── list-books-query.dto.ts  Validation for ?status=, ?q= and ?sort=
 ```
 
 ## Frontend
@@ -165,8 +165,12 @@ npm install              # first time only
 npm run dev              # http://localhost:5173
 ```
 
-Open http://localhost:5173. You can add books, filter them by status, change a book's status, and
-delete books.
+Open http://localhost:5173. You can add books, search them by title or author, sort them by date
+added or title, filter them by status, change a book's status, and delete books.
+
+Search and sort run on the API (`?q=` and `?sort=`): the list reloads 300 ms after you stop typing,
+and an older response that arrives late is ignored. The status filter buttons run in the browser on
+top of the search result, so their counts count the books that match the search.
 
 The page calls `/api/books` on its own origin, and the Vite dev server forwards those requests to
 the API at http://localhost:3000 (`server.proxy` in `frontend/vite.config.ts` removes `/api`, so
@@ -192,11 +196,12 @@ frontend/
 └── src/
     ├── main.ts                     createApp(App).mount('#app'), global CSS
     ├── style.css                   Global styles and colors (light and dark)
-    ├── types.ts                    Book type and statuses, matching the API
+    ├── types.ts                    Book type, statuses and sort fields, matching the API
     ├── api.ts                      fetch wrappers for the endpoints, Nest error messages
-    ├── App.vue                     Owns the list of books: loading, filters, counts
+    ├── App.vue                     Owns the list and the search/sort state: loading, filters, counts
     └── components/
         ├── BookForm.vue            Form to add a book (v-model, emits `created`)
+        ├── BookSearch.vue          Search input and sort select (defineModel: v-model:q, v-model:sort)
         └── BookItem.vue            One book: change status, delete (props in, events out)
 ```
 
@@ -234,12 +239,19 @@ an author, and `"title": null` on PATCH leaves the title unchanged.
 
 | Method   | Path                | Description                    | Success         |
 | -------- | ------------------- | ------------------------------ | --------------- |
-| `GET`    | `/books`            | List all books                 | `200`           |
-| `GET`    | `/books?status=<s>` | List books with a given status | `200`           |
+| `GET`    | `/books`            | List books (see query parameters below) | `200`  |
 | `GET`    | `/books/:id`        | Get one book                   | `200`           |
 | `POST`   | `/books`            | Create a book                  | `201`           |
 | `PATCH`  | `/books/:id`        | Update some fields of a book   | `200`           |
 | `DELETE` | `/books/:id`        | Delete a book                  | `204` (no body) |
+
+Query parameters of `GET /books`. All are optional and can be combined:
+
+| Parameter | Values                  | What it does                                                    |
+| --------- | ----------------------- | --------------------------------------------------------------- |
+| `status`  | `want`, `reading`, `done` | Only books with this status                                   |
+| `q`       | any text                | Only books whose title or author contains it, ignoring case. Spaces around it are trimmed; an empty `q` means no search |
+| `sort`    | `createdAt`, `title`    | Order of the list, ascending. Default: `createdAt` (oldest first) |
 
 Request bodies must be JSON and sent with `Content-Type: application/json`. Without that header
 the body is not parsed, and you get a `400` because `title` is missing.
@@ -260,7 +272,7 @@ Other errors have a single message:
 
 | Status | When                                                                  |
 | ------ | --------------------------------------------------------------------- |
-| `400`  | Invalid JSON, a failed validation, an unknown `status` filter, or an ID that isn't a UUID |
+| `400`  | Invalid JSON, a failed validation, an unknown `status` or `sort`, a repeated `q`, or an ID that isn't a UUID |
 | `404`  | Unknown book ID, unknown route, or unsupported method (e.g. `PUT`)    |
 | `413`  | Request body larger than 100 KB                                       |
 | `500`  | Unexpected server or database error                                   |
@@ -309,6 +321,27 @@ An unknown status gives a `400`:
 ```bash
 curl -i "http://localhost:3000/books?status=banana"
 # {"message":["status must be one of the following values: want, reading, done"],"error":"Bad Request","statusCode":400}
+```
+
+### Search and sort
+
+```bash
+curl -s "http://localhost:3000/books?q=weir" | jq           # title or author contains "weir", any case
+curl -s "http://localhost:3000/books?sort=title" | jq       # A to Z by title
+curl -s "http://localhost:3000/books?q=hail&status=reading&sort=title" | jq   # all combined
+```
+
+Put spaces or special characters in the search through `--data-urlencode`, so curl encodes them:
+
+```bash
+curl -s -G http://localhost:3000/books --data-urlencode "q=hail mary" | jq
+```
+
+An unknown sort field gives a `400`:
+
+```bash
+curl -i "http://localhost:3000/books?sort=banana"
+# {"message":["sort must be one of the following values: title, createdAt"],"error":"Bad Request","statusCode":400}
 ```
 
 ### Create a book

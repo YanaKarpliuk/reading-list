@@ -2,7 +2,7 @@ import { Transform, type TransformFnParams } from 'class-transformer';
 import { IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { STATUSES, type BookStatus } from '../book.js';
 
-const trim = ({ value }: TransformFnParams): unknown =>
+export const trim = ({ value }: TransformFnParams): unknown =>
   typeof value === 'string' ? value.trim() : value;
 
 // DTO = Data Transfer Object: describes what a client may send in the body.

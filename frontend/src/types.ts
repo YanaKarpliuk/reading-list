@@ -1,13 +1,21 @@
-// The same statuses the backend accepts (src/books/book.ts in the API).
-// The frontend is a separate project, so it keeps its own copy.
+// The same statuses and sort fields the backend accepts
+// (backend/src/books/book.ts). The frontend is a separate project, so it
+// keeps its own copy: change both together.
 export const STATUSES = ['want', 'reading', 'done'] as const;
+export const SORT = ['title', 'createdAt'] as const;
 
 export type BookStatus = (typeof STATUSES)[number];
+export type Sort = (typeof SORT)[number];
 
 export const STATUS_LABELS: Record<BookStatus, string> = {
   want: 'Want to read',
   reading: 'Reading',
   done: 'Done',
+};
+
+export const SORT_LABELS: Record<Sort, string> = {
+  createdAt: 'Date added',
+  title: 'Title',
 };
 
 // A book as the API sends it. JSON has no Date type, so createdAt is a string.

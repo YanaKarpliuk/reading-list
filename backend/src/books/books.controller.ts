@@ -27,7 +27,7 @@ export class BooksController {
 
   @Get()
   findAll(@Query() query: ListBooksQueryDto) {
-    return this.booksService.findAll(query.status);
+    return this.booksService.findAll(query);
   }
 
   @Get(':id')
