@@ -13,6 +13,9 @@ async function bootstrap() {
   // Run lifecycle hooks like onApplicationShutdown on Ctrl+C.
   app.enableShutdownHooks();
 
+  // Every route starts with /api.
+  app.setGlobalPrefix('api');
+
   await app.listen(process.env.PORT ?? 3000);
 }
 await bootstrap();

@@ -106,7 +106,8 @@ cd backend
 npm run start:dev        # compile, start, and restart on every file save
 ```
 
-The server runs at http://localhost:3000 (set `PORT` in `backend/.env` to change it). If it can't
+The server runs at http://localhost:3000, and every route is under `/api`, e.g.
+http://localhost:3000/api/books (set `PORT` in `backend/.env` to change the port). If it can't
 reach the database, or `DATABASE_URL` is missing, it stops right away with an error.
 
 | Script (in `backend/`) | What it does                                     |
@@ -172,10 +173,10 @@ Search and sort run on the API (`?q=` and `?sort=`): the list reloads 300 ms aft
 and an older response that arrives late is ignored. The status filter buttons run in the browser on
 top of the search result, so their counts count the books that match the search.
 
-The page calls `/api/books` on its own origin, and the Vite dev server forwards those requests to
-the API at http://localhost:3000 (`server.proxy` in `frontend/vite.config.ts` removes `/api`, so
-`/api/books` becomes `/books`). The browser only talks to one origin, so the API needs no CORS
-setup. The API has to be running, otherwise the page shows "Could not load books".
+The page calls `/api/books` on its own origin, and the Vite dev server forwards those requests
+unchanged to the API (`server.proxy` in `frontend/vite.config.ts`): `/api/books` on port 5173
+becomes http://localhost:3000/api/books. The browser only talks to one origin, so the API needs no
+CORS setup. The API has to be running, otherwise the page shows "Could not load books".
 
 | Script (in `frontend/`) | What it does                                          |
 | ----------------------- | ----------------------------------------------------- |
@@ -237,15 +238,18 @@ an author, and `"title": null` on PATCH leaves the title unchanged.
 
 ## Endpoints
 
+All routes start with `/api` (`app.setGlobalPrefix('api')` in `backend/src/main.ts`). That keeps
+API URLs apart from page URLs, so the same server can later serve the built frontend too.
+
 | Method   | Path                | Description                    | Success         |
 | -------- | ------------------- | ------------------------------ | --------------- |
-| `GET`    | `/books`            | List books (see query parameters below) | `200`  |
-| `GET`    | `/books/:id`        | Get one book                   | `200`           |
-| `POST`   | `/books`            | Create a book                  | `201`           |
-| `PATCH`  | `/books/:id`        | Update some fields of a book   | `200`           |
-| `DELETE` | `/books/:id`        | Delete a book                  | `204` (no body) |
+| `GET`    | `/api/books`        | List books (see query parameters below) | `200`  |
+| `GET`    | `/api/books/:id`    | Get one book                   | `200`           |
+| `POST`   | `/api/books`        | Create a book                  | `201`           |
+| `PATCH`  | `/api/books/:id`    | Update some fields of a book   | `200`           |
+| `DELETE` | `/api/books/:id`    | Delete a book                  | `204` (no body) |
 
-Query parameters of `GET /books`. All are optional and can be combined:
+Query parameters of `GET /api/books`. All are optional and can be combined:
 
 | Parameter | Values                  | What it does                                                    |
 | --------- | ----------------------- | --------------------------------------------------------------- |
@@ -299,55 +303,55 @@ echo '-w "\n"' >> ~/.curlrc
 ### List all books
 
 ```bash
-curl -i http://localhost:3000/books
+curl -i http://localhost:3000/api/books
 ```
 
 Pretty-printed with `jq`:
 
 ```bash
-curl -s http://localhost:3000/books | jq
+curl -s http://localhost:3000/api/books | jq
 ```
 
 ### Filter by status
 
 ```bash
-curl -i "http://localhost:3000/books?status=reading"
-curl -i "http://localhost:3000/books?status=want"
-curl -i "http://localhost:3000/books?status=done"
+curl -i "http://localhost:3000/api/books?status=reading"
+curl -i "http://localhost:3000/api/books?status=want"
+curl -i "http://localhost:3000/api/books?status=done"
 ```
 
 An unknown status gives a `400`:
 
 ```bash
-curl -i "http://localhost:3000/books?status=banana"
+curl -i "http://localhost:3000/api/books?status=banana"
 # {"message":["status must be one of the following values: want, reading, done"],"error":"Bad Request","statusCode":400}
 ```
 
 ### Search and sort
 
 ```bash
-curl -s "http://localhost:3000/books?q=weir" | jq           # title or author contains "weir", any case
-curl -s "http://localhost:3000/books?sort=title" | jq       # A to Z by title
-curl -s "http://localhost:3000/books?q=hail&status=reading&sort=title" | jq   # all combined
+curl -s "http://localhost:3000/api/books?q=weir" | jq           # title or author contains "weir", any case
+curl -s "http://localhost:3000/api/books?sort=title" | jq       # A to Z by title
+curl -s "http://localhost:3000/api/books?q=hail&status=reading&sort=title" | jq   # all combined
 ```
 
 Put spaces or special characters in the search through `--data-urlencode`, so curl encodes them:
 
 ```bash
-curl -s -G http://localhost:3000/books --data-urlencode "q=hail mary" | jq
+curl -s -G http://localhost:3000/api/books --data-urlencode "q=hail mary" | jq
 ```
 
 An unknown sort field gives a `400`:
 
 ```bash
-curl -i "http://localhost:3000/books?sort=banana"
+curl -i "http://localhost:3000/api/books?sort=banana"
 # {"message":["sort must be one of the following values: title, createdAt"],"error":"Bad Request","statusCode":400}
 ```
 
 ### Create a book
 
 ```bash
-curl -i -X POST http://localhost:3000/books \
+curl -i -X POST http://localhost:3000/api/books \
   -H 'Content-Type: application/json' \
   -d '{"title": "Project Hail Mary", "author": "Andy Weir", "status": "reading"}'
 ```
@@ -355,7 +359,7 @@ curl -i -X POST http://localhost:3000/books \
 Only `title` is required. `status` defaults to `want`:
 
 ```bash
-curl -i -X POST http://localhost:3000/books \
+curl -i -X POST http://localhost:3000/api/books \
   -H 'Content-Type: application/json' \
   -d '{"title": "Neuromancer"}'
 ```
@@ -367,7 +371,7 @@ The response (`201 Created`) contains the new book with its `id`. Copy the `id` 
 IDs are long and random, so it's handy to store one in a variable. With `jq`:
 
 ```bash
-ID=$(curl -s -X POST http://localhost:3000/books \
+ID=$(curl -s -X POST http://localhost:3000/api/books \
   -H 'Content-Type: application/json' \
   -d '{"title": "Test Book"}' | jq -r '.id')
 echo $ID
@@ -384,7 +388,7 @@ The examples below use `$ID`.
 ### Get one book
 
 ```bash
-curl -i http://localhost:3000/books/$ID
+curl -i http://localhost:3000/api/books/$ID
 ```
 
 ### Update a book
@@ -392,13 +396,13 @@ curl -i http://localhost:3000/books/$ID
 Send only the fields you want to change:
 
 ```bash
-curl -i -X PATCH http://localhost:3000/books/$ID \
+curl -i -X PATCH http://localhost:3000/api/books/$ID \
   -H 'Content-Type: application/json' \
   -d '{"status": "done"}'
 ```
 
 ```bash
-curl -i -X PATCH http://localhost:3000/books/$ID \
+curl -i -X PATCH http://localhost:3000/api/books/$ID \
   -H 'Content-Type: application/json' \
   -d '{"title": "A Better Title", "author": "Someone"}'
 ```
@@ -406,14 +410,14 @@ curl -i -X PATCH http://localhost:3000/books/$ID \
 ### Delete a book
 
 ```bash
-curl -i -X DELETE http://localhost:3000/books/$ID
+curl -i -X DELETE http://localhost:3000/api/books/$ID
 # HTTP/1.1 204 No Content
 ```
 
 Check that it's gone:
 
 ```bash
-curl -i http://localhost:3000/books/$ID
+curl -i http://localhost:3000/api/books/$ID
 # 404 {"message":"Book not found","error":"Not Found","statusCode":404}
 ```
 
@@ -422,7 +426,7 @@ curl -i http://localhost:3000/books/$ID
 Broken JSON:
 
 ```bash
-curl -i -X POST http://localhost:3000/books \
+curl -i -X POST http://localhost:3000/api/books \
   -H 'Content-Type: application/json' \
   -d '{"title": "Dune",'
 # 400 {"message":"Unexpected end of JSON input","error":"Bad Request","statusCode":400}
@@ -431,7 +435,7 @@ curl -i -X POST http://localhost:3000/books \
 Empty title:
 
 ```bash
-curl -i -X POST http://localhost:3000/books \
+curl -i -X POST http://localhost:3000/api/books \
   -H 'Content-Type: application/json' \
   -d '{"title": ""}'
 # 400 {"message":["title should not be empty"],"error":"Bad Request","statusCode":400}
@@ -440,7 +444,7 @@ curl -i -X POST http://localhost:3000/books \
 Invalid status:
 
 ```bash
-curl -i -X POST http://localhost:3000/books \
+curl -i -X POST http://localhost:3000/api/books \
   -H 'Content-Type: application/json' \
   -d '{"title": "Dune", "status": "lost"}'
 # 400 {"message":["status must be one of the following values: want, reading, done"],"error":"Bad Request","statusCode":400}
@@ -449,22 +453,22 @@ curl -i -X POST http://localhost:3000/books \
 Missing `Content-Type` header:
 
 ```bash
-curl -i -X POST http://localhost:3000/books -d '{"title": "Dune"}'
+curl -i -X POST http://localhost:3000/api/books -d '{"title": "Dune"}'
 # 400 {"message":["title should not be empty","title must be a string"],"error":"Bad Request","statusCode":400}
 ```
 
 An ID that isn't a UUID:
 
 ```bash
-curl -i http://localhost:3000/books/made-up-id
+curl -i http://localhost:3000/api/books/made-up-id
 # 400 {"message":"Validation failed (uuid is expected)","error":"Bad Request","statusCode":400}
 ```
 
 Unknown route:
 
 ```bash
-curl -i http://localhost:3000/anything
-# 404 {"message":"Cannot GET /anything","error":"Not Found","statusCode":404}
+curl -i http://localhost:3000/api/anything
+# 404 {"message":"Cannot GET /api/anything","error":"Not Found","statusCode":404}
 ```
 
 ## Working with the database directly
