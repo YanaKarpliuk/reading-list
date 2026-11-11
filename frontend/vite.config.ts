@@ -22,6 +22,9 @@ export default defineConfig({
   server: {
     // The page runs on http://localhost:5173, the API on :3000. Those are
     // different origins, so the browser would block the requests (CORS).
+    // Instead, the page calls /api/... on its own origin, and Vite's dev
+    // server forwards it unchanged to Nest (e.g. :3000/api/books).
+    // The browser never sees port 3000.
     proxy: {
       '/api': {
         target: 'http://localhost:3000',

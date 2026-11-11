@@ -60,7 +60,7 @@ async function loadBooks() {
   try {
     const result = await listBooks({ q: q.value.trim(), sort: sort.value });
     if (requestId !== latestRequest) return;
-    books.value = result;
+    books.value = result.items;
   } catch (err) {
     if (requestId !== latestRequest) return;
     loadError.value = errorText(err);

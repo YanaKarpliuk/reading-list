@@ -169,9 +169,11 @@ npm run dev              # http://localhost:5173
 Open http://localhost:5173. You can add books, search them by title or author, sort them by date
 added or title, filter them by status, change a book's status, and delete books.
 
-Search and sort run on the API (`?q=` and `?sort=`): the list reloads 300 ms after you stop typing,
-and an older response that arrives late is ignored. The status filter buttons run in the browser on
-top of the search result, so their counts count the books that match the search.
+The page loads all matching books in one request: it reads `items` from the response and sends no
+`limit`, because the status filter and its counts need every book. Search and sort run on the API
+(`?q=` and `?sort=`): the list reloads 300 ms after you stop typing, and an older response that
+arrives late is ignored. The status filter buttons run in the browser on top of the search result,
+so their counts count the books that match the search.
 
 The page calls `/api/books` on its own origin, and the Vite dev server forwards those requests
 unchanged to the API (`server.proxy` in `frontend/vite.config.ts`): `/api/books` on port 5173
@@ -255,7 +257,30 @@ Query parameters of `GET /api/books`. All are optional and can be combined:
 | --------- | ----------------------- | --------------------------------------------------------------- |
 | `status`  | `want`, `reading`, `done` | Only books with this status                                   |
 | `q`       | any text                | Only books whose title or author contains it, ignoring case. Spaces around it are trimmed; an empty `q` means no search |
-| `sort`    | `createdAt`, `title`    | Order of the list, ascending. Default: `createdAt` (oldest first) |
+| `sort`    | `createdAt`, `title`    | Order of the list, ascending. Default: `createdAt` (oldest first). Books with the same value are ordered by `id`, so the order is always the same and pages never overlap |
+| `page`    | integer, 1 or more      | Which page to return. Default: `1`. Only allowed together with `limit` |
+| `limit`   | integer, 1 to 10        | Books per page. Without it, all matching books are returned in one response |
+
+The response is one page of books plus what a client needs to show page buttons:
+
+```json
+{
+  "items": [{ "id": "…", "title": "Project Hail Mary", "author": "Andy Weir", "status": "reading", "createdAt": "…" }],
+  "total": 7,
+  "page": 1,
+  "limit": 2
+}
+```
+
+| Field   | Meaning                                                                        |
+| ------- | ------------------------------------------------------------------------------ |
+| `items` | The books on this page (an empty array after the last page)                    |
+| `total` | How many books match `status` and `q` in total, on all pages                   |
+| `page`  | The page number, `1` when no `page` was sent                                   |
+| `limit` | The page size that was used, or `null` when no `limit` was sent (all books)    |
+
+The number of pages is `Math.ceil(total / limit)`. `items` and `total` are read with the same filter
+in one `prisma.$transaction`, so `total` always counts the same books that `items` comes from.
 
 Request bodies must be JSON and sent with `Content-Type: application/json`. Without that header
 the body is not parsed, and you get a `400` because `title` is missing.
@@ -276,7 +301,7 @@ Other errors have a single message:
 
 | Status | When                                                                  |
 | ------ | --------------------------------------------------------------------- |
-| `400`  | Invalid JSON, a failed validation, an unknown `status` or `sort`, a repeated `q`, or an ID that isn't a UUID |
+| `400`  | Invalid JSON, a failed validation, an unknown `status` or `sort`, a repeated `q`, a `page` or `limit` that isn't a whole number in range, a `page` without `limit`, or an ID that isn't a UUID |
 | `404`  | Unknown book ID, unknown route, or unsupported method (e.g. `PUT`)    |
 | `413`  | Request body larger than 100 KB                                       |
 | `500`  | Unexpected server or database error                                   |
@@ -304,6 +329,12 @@ echo '-w "\n"' >> ~/.curlrc
 
 ```bash
 curl -i http://localhost:3000/api/books
+```
+
+The books are in `items` (see [Endpoints](#endpoints)). To print only the titles:
+
+```bash
+curl -s http://localhost:3000/api/books | jq '[.items[].title]'
 ```
 
 Pretty-printed with `jq`:
@@ -346,6 +377,24 @@ An unknown sort field gives a `400`:
 ```bash
 curl -i "http://localhost:3000/api/books?sort=banana"
 # {"message":["sort must be one of the following values: title, createdAt"],"error":"Bad Request","statusCode":400}
+```
+
+### Pages
+
+```bash
+curl -s "http://localhost:3000/api/books?page=1&limit=2" | jq    # the first 2 books, plus total/page/limit
+curl -s "http://localhost:3000/api/books?page=2&limit=2" | jq    # the next 2
+curl -s "http://localhost:3000/api/books?q=weir&sort=title&page=1&limit=5" | jq   # combined with search and sort
+```
+
+A page after the last one returns `"items": []`, with the correct `total`. Invalid values give a
+`400`. Every failed rule of a field is listed, so a missing `limit` reports several messages:
+
+```bash
+curl -s "http://localhost:3000/api/books?limit=11" | jq .message
+# ["limit must not be greater than 10"]
+curl -s "http://localhost:3000/api/books?page=2" | jq .message
+# ["limit is required when page is set", "limit must not be less than 1", ...]
 ```
 
 ### Create a book

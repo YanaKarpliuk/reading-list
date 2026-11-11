@@ -1,6 +1,6 @@
-import { IsIn, IsOptional, IsString } from 'class-validator';
+import {IsDefined, IsIn, IsInt, IsOptional, IsString, Max, Min, ValidateIf} from 'class-validator';
 import { STATUSES, SORT, type BookStatus, type Sort } from '../book.js';
-import {Transform} from "class-transformer";
+import {Transform, Type} from "class-transformer";
 import {trim} from "./create-book.dto.js";
 
 // The query string of GET /books, e.g. ?status=reading&q=weir&sort=title.
@@ -20,4 +20,18 @@ export class ListBooksQueryDto {
   @IsOptional()
   @IsIn(SORT)
   sort?: Sort;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @ValidateIf((query: ListBooksQueryDto) => query.page !== undefined || query.limit !== undefined)
+  @IsDefined({ message: 'limit is required when page is set' })
+  @Type(() => Number)
+  @IsInt()
+  @Max(10)
+  @Min(1)
+  limit?: number;
 }

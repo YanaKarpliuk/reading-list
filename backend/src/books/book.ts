@@ -1,3 +1,5 @@
+import type { Book } from '../generated/prisma/client.js';
+
 // The allowed values for a book's status and for ?sort= on GET /books.
 // The DTOs use them to validate input; the frontend keeps a copy in
 // frontend/src/types.ts, so change both together.
@@ -7,3 +9,12 @@ export const SORT = ['title', 'createdAt'] as const;
 
 export type BookStatus = (typeof STATUSES)[number];
 export type Sort = (typeof SORT)[number];
+
+// The response of GET /api/books: one page of books plus what a client
+// needs to show page buttons. limit is null when no limit was asked for.
+export interface BookPage {
+    items: Book[];
+    total: number;
+    page: number;
+    limit: number | null;
+}

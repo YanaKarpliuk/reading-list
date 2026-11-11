@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateBookDto } from './dto/create-book.dto.js';
 import { UpdateBookDto } from './dto/update-book.dto.js';
 import {ListBooksQueryDto} from "./dto/list-books-query.dto.js";
+import type { BookPage } from "./book.js";
 
 // The service holds the logic and talks to the database.
 // It knows nothing about HTTP: no req, no res, no status codes.
@@ -11,8 +12,9 @@ import {ListBooksQueryDto} from "./dto/list-books-query.dto.js";
 export class BooksService {
   constructor(private readonly prisma: PrismaService) {}
 
-  findAll(query: ListBooksQueryDto): Promise<Book[]> {
-    const { status, q, sort } = query;
+  async findAll(query: ListBooksQueryDto): Promise<BookPage> {
+    const { status, q, sort, page = 1, limit } = query;
+
     // A `where` field that is undefined is ignored, so one query covers every
     // combination: no filter, only a status, only a search, or both.
     // - status: exact match.
@@ -21,16 +23,27 @@ export class BooksService {
     //   Without q there is no OR at all, so every book matches.
     // - sort: the column to order by, oldest first by default. Validated by
     //   the DTO, so it can only be 'title' or 'createdAt'.
-    return this.prisma.book.findMany({
-      where: {
-        status,
-        OR: q ? [
-          { title: { contains: q, mode: 'insensitive' } },
-          { author: { contains: q, mode: 'insensitive' } }
-        ] : undefined
-      },
-      orderBy: { [sort ?? 'createdAt']: 'asc' },
-    });
+    const where: Prisma.BookWhereInput = {
+      status,
+      OR: q ? [
+        { title: { contains: q, mode: 'insensitive' } },
+        { author: { contains: q, mode: 'insensitive' } }
+      ] : undefined
+    }
+
+    // page/limit: take = limit, skip = the books of earlier pages; no limit means all books.
+    // count uses the same where without take/skip, so total counts every match.
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.book.findMany({
+        where,
+        orderBy: [{ [sort ?? 'createdAt']: 'asc' }, { id: 'asc' }],
+        take: limit,
+        skip: limit ? (page - 1) * limit : 0
+      }),
+      this.prisma.book.count({ where }), // same where, but no take/skip: count ALL matches
+    ]);
+
+    return { items, total, page, limit: limit ?? null };
   }
 
   async findOne(id: string): Promise<Book> {

@@ -33,3 +33,10 @@ export interface NewBook {
   author?: string;
   status?: BookStatus;
 }
+
+export interface BookPage {
+  items: Book[];
+  total: number;
+  page: number;
+  limit: number | null;
+}
