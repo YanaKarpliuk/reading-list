@@ -168,13 +168,21 @@ npm run dev              # http://localhost:5173
 ```
 
 Open http://localhost:5173. You can add books, search them by title or author, sort them by date
-added or title, filter them by status, change a book's status, and delete books.
+added or title, filter them by status, page through the list, change a book's status, and delete
+books.
 
-The page loads all matching books in one request: it reads `items` from the response and sends no
-`limit`, because the status filter and its counts need every book. Search and sort run on the API
-(`?q=` and `?sort=`): the list reloads 300 ms after you stop typing, and an older response that
-arrives late is ignored. The status filter buttons run in the browser on top of the search result,
-so their counts count the books that match the search.
+Everything that decides which books are shown runs on the API. The page loads one page of 5 books
+(`PAGE_SIZE` in `App.vue`) with `GET /api/books?q=&sort=&status=&page=&limit=5`, and the counts on
+the filter buttons with `GET /api/books/stats?q=`:
+
+- Typing in the search reloads the list and the counts 300 ms after you stop, starting at page 1.
+- Changing the sort or the status filter reloads the list right away, also from page 1. The counts
+  stay, because they only depend on the search.
+- Previous/Next load the other page right away. They only appear when there is more than one page.
+- After adding, changing or deleting a book, the page and the counts are loaded again, because the
+  book may now belong on another page or in another count. If the page is past the end afterwards
+  (for example after deleting the only book on the last page), the last page is shown instead.
+- When responses arrive out of order, only the newest one is used.
 
 The page calls `/api/books` on its own origin, and the Vite dev server forwards those requests
 unchanged to the API (`server.proxy` in `frontend/vite.config.ts`): `/api/books` on port 5173
@@ -200,12 +208,13 @@ frontend/
 └── src/
     ├── main.ts                     createApp(App).mount('#app'), global CSS
     ├── style.css                   Global styles and colors (light and dark)
-    ├── types.ts                    Book type, statuses and sort fields, matching the API
-    ├── api.ts                      fetch wrappers for the endpoints, Nest error messages
-    ├── App.vue                     Owns the list and the search/sort state: loading, filters, counts
+    ├── types.ts                    Book, BookPage and BookStats types, statuses and sort fields, matching the API
+    ├── api.ts                      fetch wrappers for the endpoints (list, stats, CRUD), Nest error messages
+    ├── App.vue                     Owns the list state: search, sort, filter, page, counts, when to load
     └── components/
         ├── BookForm.vue            Form to add a book (v-model, emits `created`)
         ├── BookSearch.vue          Search input and sort select (defineModel: v-model:q, v-model:sort)
+        ├── BookPagination.vue      Previous/Next and "Page 2 of 3" (props in, emits `change`)
         └── BookItem.vue            One book: change status, delete (props in, events out)
 ```
 

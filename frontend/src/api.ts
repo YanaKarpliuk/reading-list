@@ -1,4 +1,11 @@
-import type {Book, BookPage, NewBook, Sort} from './types';
+import type {
+  Book,
+  BookPage,
+  BookStats,
+  BookStatus,
+  NewBook,
+  Sort,
+} from './types';
 
 // Requests go to our own origin; Vite forwards /api to Nest (vite.config.ts).
 const BASE_URL = '/api/books';
@@ -40,14 +47,34 @@ export function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-export function listBooks(
-  params: { q?: string; sort?: Sort } = {},
-): Promise<BookPage> {
+// The query parameters of GET /api/books. All are optional; the backend
+// requires limit whenever page is set. (A `type`, not an `interface`: only
+// a type alias can be passed where a Record<string, ...> is expected.)
+export type ListBooksParams = {
+  q?: string;
+  sort?: Sort;
+  status?: BookStatus;
+  page?: number;
+  limit?: number;
+};
+
+// Builds "?q=...&page=2" from the values that are set, or "" if none are.
+// URLSearchParams encodes special characters and only takes strings.
+function queryString(params: Record<string, string | number | undefined>) {
   const search = new URLSearchParams();
-  if (params.q) search.set('q', params.q);
-  if (params.sort) search.set('sort', params.sort);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== '') search.set(key, String(value));
+  }
   const qs = search.toString();
-  return request<BookPage>(qs ? `?${qs}` : '');
+  return qs ? `?${qs}` : '';
+}
+
+export function listBooks(params: ListBooksParams = {}): Promise<BookPage> {
+  return request<BookPage>(queryString(params));
+}
+
+export function getStats(q?: string): Promise<BookStats> {
+  return request<BookStats>(`/stats${queryString({ q })}`);
 }
 
 export function createBook(book: NewBook): Promise<Book> {

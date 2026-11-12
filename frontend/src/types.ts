@@ -7,6 +7,9 @@ export const SORT = ['title', 'createdAt'] as const;
 export type BookStatus = (typeof STATUSES)[number];
 export type Sort = (typeof SORT)[number];
 
+// The status filter buttons: one per status, plus "all".
+export type Filter = BookStatus | 'all';
+
 export const STATUS_LABELS: Record<BookStatus, string> = {
   want: 'Want to read',
   reading: 'Reading',
@@ -34,9 +37,15 @@ export interface NewBook {
   status?: BookStatus;
 }
 
+// The response of GET /api/books: one page of books, plus the number of
+// matching books on all pages (total), so we can work out the page count.
 export interface BookPage {
   items: Book[];
   total: number;
   page: number;
   limit: number | null;
 }
+
+// The response of GET /api/books/stats: how many books match the search,
+// per status and in total. Used for the counts on the filter buttons.
+export type BookStats = Record<Filter, number>;
