@@ -4,13 +4,24 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateBookDto } from './dto/create-book.dto.js';
 import { UpdateBookDto } from './dto/update-book.dto.js';
 import {ListBooksQueryDto} from "./dto/list-books-query.dto.js";
-import type { BookPage } from "./book.js";
+import type {BookPage, BookStats, BookStatus} from "./book.js";
+import {StatsBooksQueryDto} from "./dto/stats-books-query.dto.js";
 
 // The service holds the logic and talks to the database.
 // It knows nothing about HTTP: no req, no res, no status codes.
 @Injectable()
 export class BooksService {
   constructor(private readonly prisma: PrismaService) {}
+
+  // The search part of the filter, shared by findAll and getStats.
+  private searchFilter(q?: string): Prisma.BookWhereInput {
+    return q
+        ? { OR: [
+            { title: { contains: q, mode: 'insensitive' } },
+            { author: { contains: q, mode: 'insensitive' } },
+          ] }
+        : {};
+  }
 
   async findAll(query: ListBooksQueryDto): Promise<BookPage> {
     const { status, q, sort, page = 1, limit } = query;
@@ -25,10 +36,7 @@ export class BooksService {
     //   the DTO, so it can only be 'title' or 'createdAt'.
     const where: Prisma.BookWhereInput = {
       status,
-      OR: q ? [
-        { title: { contains: q, mode: 'insensitive' } },
-        { author: { contains: q, mode: 'insensitive' } }
-      ] : undefined
+      ...this.searchFilter(q)
     }
 
     // page/limit: take = limit, skip = the books of earlier pages; no limit means all books.
@@ -44,6 +52,30 @@ export class BooksService {
     ]);
 
     return { items, total, page, limit: limit ?? null };
+  }
+
+  // Counts per status for the status filter buttons. Uses the same search as findAll but ignores status,
+  // so every button shows its own count. groupBy only returns statuses that have books, so every count starts at 0.
+  async getStats(query: StatsBooksQueryDto): Promise<BookStats> {
+    const { q } = query;
+
+    const where: Prisma.BookWhereInput = this.searchFilter(q);
+
+    const result: BookStats = {
+      all: 0,
+      want: 0,
+      reading: 0,
+      done: 0,
+    };
+
+    const groupedBooks = await this.prisma.book.groupBy({ by: ['status'], where, _count: true });
+
+    for (const book of groupedBooks) {
+      result[book.status as BookStatus] = book._count;
+      result.all += book._count;
+    }
+
+    return result;
   }
 
   async findOne(id: string): Promise<Book> {

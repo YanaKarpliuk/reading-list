@@ -18,3 +18,5 @@ export interface BookPage {
     page: number;
     limit: number | null;
 }
+
+export type BookStats = Record<BookStatus | 'all', number>;

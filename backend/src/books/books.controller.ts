@@ -15,6 +15,7 @@ import { BooksService } from './books.service.js';
 import { CreateBookDto } from './dto/create-book.dto.js';
 import { ListBooksQueryDto } from './dto/list-books-query.dto.js';
 import { UpdateBookDto } from './dto/update-book.dto.js';
+import {StatsBooksQueryDto} from "./dto/stats-books-query.dto.js";
 
 // The controller handles HTTP: it maps routes to methods and passes the
 // already-validated input to the service. Whatever a method returns is
@@ -28,6 +29,11 @@ export class BooksController {
   @Get()
   findAll(@Query() query: ListBooksQueryDto) {
     return this.booksService.findAll(query);
+  }
+
+  @Get('stats')
+  getStats(@Query() query: StatsBooksQueryDto) {
+    return this.booksService.getStats(query);
   }
 
   @Get(':id')

@@ -148,12 +148,13 @@ backend/
     └── books/
         ├── books.module.ts         Groups the books controller and service
         ├── books.controller.ts     HTTP routes → service calls
-        ├── books.service.ts        Prisma queries, throws NotFoundException
-        ├── book.ts                 STATUSES and the BookStatus type
+        ├── books.service.ts        Prisma queries (list, stats, CRUD), throws NotFoundException
+        ├── book.ts                 STATUSES, SORT and the BookStatus, Sort, BookPage, BookStats types
         └── dto/
             ├── create-book.dto.ts  Validation rules for POST
             ├── update-book.dto.ts  Same rules, all optional (PATCH)
-            └── list-books-query.dto.ts  Validation for ?status=, ?q= and ?sort=
+            ├── list-books-query.dto.ts  Validation for ?status=, ?q=, ?sort=, ?page= and ?limit=
+            └── stats-books-query.dto.ts Validation for ?q= on /books/stats
 ```
 
 ## Frontend
@@ -246,6 +247,7 @@ API URLs apart from page URLs, so the same server can later serve the built fron
 | Method   | Path                | Description                    | Success         |
 | -------- | ------------------- | ------------------------------ | --------------- |
 | `GET`    | `/api/books`        | List books (see query parameters below) | `200`  |
+| `GET`    | `/api/books/stats`  | Count books per status (see [below](#counts-per-status)) | `200` |
 | `GET`    | `/api/books/:id`    | Get one book                   | `200`           |
 | `POST`   | `/api/books`        | Create a book                  | `201`           |
 | `PATCH`  | `/api/books/:id`    | Update some fields of a book   | `200`           |
@@ -281,6 +283,27 @@ The response is one page of books plus what a client needs to show page buttons:
 
 The number of pages is `Math.ceil(total / limit)`. `items` and `total` are read with the same filter
 in one `prisma.$transaction`, so `total` always counts the same books that `items` comes from.
+
+### Counts per status
+
+`GET /api/books/stats` counts the books for each status, for example for filter buttons like
+"Reading (1)":
+
+```json
+{ "all": 7, "want": 5, "reading": 1, "done": 1 }
+```
+
+It takes one optional query parameter, `q`, with the same search as `GET /api/books` (title or
+author, ignoring case, trimmed). With `q`, only matching books are counted. It has no `status`
+parameter: every status is counted, so each button can show its own number. A status without books
+is `0`, and `all` is the sum of the other three, so it equals `total` from `GET /api/books` with the
+same `q`.
+
+In `books.controller.ts`, `@Get('stats')` is declared before `@Get(':id')`. Nest checks routes in
+the order they're declared, so otherwise `stats` would be taken as an ID, and `ParseUUIDPipe` would
+answer with a `400`.
+
+### Request bodies
 
 Request bodies must be JSON and sent with `Content-Type: application/json`. Without that header
 the body is not parsed, and you get a `400` because `title` is missing.
@@ -395,6 +418,13 @@ curl -s "http://localhost:3000/api/books?limit=11" | jq .message
 # ["limit must not be greater than 10"]
 curl -s "http://localhost:3000/api/books?page=2" | jq .message
 # ["limit is required when page is set", "limit must not be less than 1", ...]
+```
+
+### Count books per status
+
+```bash
+curl -s http://localhost:3000/api/books/stats | jq            # {"all":7,"want":5,"reading":1,"done":1}
+curl -s "http://localhost:3000/api/books/stats?q=hail" | jq   # only books matching "hail"
 ```
 
 ### Create a book
