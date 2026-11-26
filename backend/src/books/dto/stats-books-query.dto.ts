@@ -1,6 +1,6 @@
 import {IsOptional, IsString} from 'class-validator';
 import {Transform} from "class-transformer";
-import {trim} from "./create-book.dto.js";
+import { trim } from '../../common/transforms.js';
 
 // The query string of GET /books/stats, e.g. ?q=weir.
 export class StatsBooksQueryDto {

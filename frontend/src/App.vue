@@ -8,7 +8,7 @@ import { errorText, getStats, listBooks } from '@/api';
 import {
   STATUSES,
   STATUS_LABELS,
-  type Book,
+  type BookListItem,
   type BookStats,
   type Filter,
   type Sort,
@@ -25,7 +25,7 @@ const PAGE_SIZE = 5;
 // Search, sort, the status filter and paging all run on the server, so
 // `books` is exactly the current page, already filtered and sorted. It can't
 // be filtered here in the browser: it only holds one page, not every book.
-const books = ref<Book[]>([]);
+const books = ref<BookListItem[]>([]);
 const total = ref(0); // matching books on all pages, from the response
 const page = ref(1);
 const loading = ref(true);

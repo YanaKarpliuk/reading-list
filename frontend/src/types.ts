@@ -30,6 +30,12 @@ export interface Book {
   createdAt: string;
 }
 
+// A book in the list of GET /api/books: the book plus how many notes it has.
+// Only the list sends noteCount; POST and PATCH answer with a plain Book.
+export interface BookListItem extends Book {
+  noteCount: number;
+}
+
 // What we may send on POST. id and createdAt are set by the database.
 export interface NewBook {
   title: string;
@@ -40,7 +46,7 @@ export interface NewBook {
 // The response of GET /api/books: one page of books, plus the number of
 // matching books on all pages (total), so we can work out the page count.
 export interface BookPage {
-  items: Book[];
+  items: BookListItem[];
   total: number;
   page: number;
   limit: number | null;
@@ -49,3 +55,14 @@ export interface BookPage {
 // The response of GET /api/books/stats: how many books match the search,
 // per status and in total. Used for the counts on the filter buttons.
 export type BookStats = Record<Filter, number>;
+
+// A note on a book, as the API sends it (GET /api/books/:bookId/notes).
+export interface Note {
+  id: string;
+  bookId: string;
+  text: string;
+  createdAt: string;
+}
+
+// The longest note the API accepts (@MaxLength in backend CreateNoteDto).
+export const NOTE_MAX_LENGTH = 2000;

@@ -1,7 +1,7 @@
 import {IsDefined, IsIn, IsInt, IsOptional, IsString, Max, Min, ValidateIf} from 'class-validator';
 import { STATUSES, SORT, type BookStatus, type Sort } from '../book.js';
 import {Transform, Type} from "class-transformer";
-import {trim} from "./create-book.dto.js";
+import { trim } from '../../common/transforms.js';
 
 // The query string of GET /books, e.g. ?status=reading&q=weir&sort=title.
 // All fields are optional. Query values always arrive as strings, or as an

@@ -3,11 +3,11 @@
 // `prisma migrate dev` compares it with the database and writes SQL migrations.
 
 generator client {
-  provider               = "prisma-client"
-  output                 = "../src/generated/prisma"
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
   // Our TypeScript uses ES modules with "nodenext", so imports need ".js".
-  moduleFormat           = "esm"
-  importFileExtension    = "js"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
 }
 
 datasource db {
@@ -24,6 +24,33 @@ model Book {
   // @map: the field is createdAt in TypeScript, created_at in the database.
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
+  // The "many" side of the relation: a book has any number of notes.
+  // This is not a column. Prisma uses it for queries like
+  // `include: { notes: true }` or `_count: { select: { notes: true } }`.
+  notes Note[]
+
   // The model is called Book, the table is called books.
   @@map("books")
+}
+
+// A note belongs to exactly one book (one-to-many: one book, many notes).
+// The CHECK constraint (non-empty text) lives in the migration SQL, like the
+// ones for books.
+model Note {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  text      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // The foreign key: a real column, book_id, that holds the id of the book.
+  bookId String @map("book_id") @db.Uuid
+
+  // The relation itself. fields/references: notes.book_id points at books.id.
+  // onDelete: Cascade: deleting a book deletes its notes too, in the database.
+  // Without it, Postgres would refuse to delete a book that still has notes.
+  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  // Postgres doesn't index foreign keys by itself. Every notes query filters
+  // by book_id ("the notes of this book"), so this keeps those fast.
+  @@index([bookId])
+  @@map("notes")
 }

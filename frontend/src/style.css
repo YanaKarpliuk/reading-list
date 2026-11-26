@@ -39,6 +39,7 @@ main {
 
 input,
 select,
+textarea,
 button {
   font: inherit;
   padding: 6px 10px;

@@ -1,9 +1,7 @@
-import { Transform, type TransformFnParams } from 'class-transformer';
+import { Transform } from 'class-transformer';
 import { IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { trim } from '../../common/transforms.js';
 import { STATUSES, type BookStatus } from '../book.js';
-
-export const trim = ({ value }: TransformFnParams): unknown =>
-  typeof value === 'string' ? value.trim() : value;
 
 // DTO = Data Transfer Object: describes what a client may send in the body.
 // ValidationPipe checks the body against these decorators before the

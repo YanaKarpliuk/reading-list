@@ -4,11 +4,13 @@ import type {
   BookStats,
   BookStatus,
   NewBook,
+  Note,
   Sort,
 } from './types';
 
 // Requests go to our own origin; Vite forwards /api to Nest (vite.config.ts).
-const BASE_URL = '/api/books';
+// Each function adds its own path: /books/..., or /notes/... for one note.
+const BASE_URL = '/api';
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(BASE_URL + path, {
@@ -70,27 +72,55 @@ function queryString(params: Record<string, string | number | undefined>) {
 }
 
 export function listBooks(params: ListBooksParams = {}): Promise<BookPage> {
-  return request<BookPage>(queryString(params));
+  return request<BookPage>(`/books${queryString(params)}`);
 }
 
 export function getStats(q?: string): Promise<BookStats> {
-  return request<BookStats>(`/stats${queryString({ q })}`);
+  return request<BookStats>(`/books/stats${queryString({ q })}`);
 }
 
 export function createBook(book: NewBook): Promise<Book> {
-  return request<Book>('', { method: 'POST', body: JSON.stringify(book) });
+  return request<Book>('/books', {
+    method: 'POST',
+    body: JSON.stringify(book),
+  });
 }
 
 export function updateBook(
   id: string,
   changes: Partial<NewBook>,
 ): Promise<Book> {
-  return request<Book>(`/${id}`, {
+  return request<Book>(`/books/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(changes),
   });
 }
 
 export function deleteBook(id: string): Promise<void> {
-  return request<void>(`/${id}`, { method: 'DELETE' });
+  return request<void>(`/books/${id}`, { method: 'DELETE' });
+}
+
+// Notes. The list and new notes belong to a book, so they go under it.
+// One note has its own id, so editing and deleting it doesn't need the book.
+
+export function listNotes(bookId: string): Promise<Note[]> {
+  return request<Note[]>(`/books/${bookId}/notes`);
+}
+
+export function createNote(bookId: string, text: string): Promise<Note> {
+  return request<Note>(`/books/${bookId}/notes`, {
+    method: 'POST',
+    body: JSON.stringify({ text }),
+  });
+}
+
+export function updateNote(id: string, text: string): Promise<Note> {
+  return request<Note>(`/notes/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ text }),
+  });
+}
+
+export function deleteNote(id: string): Promise<void> {
+  return request<void>(`/notes/${id}`, { method: 'DELETE' });
 }

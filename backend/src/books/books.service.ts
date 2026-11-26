@@ -46,12 +46,20 @@ export class BooksService {
         where,
         orderBy: [{ [sort ?? 'createdAt']: 'asc' }, { id: 'asc' }],
         take: limit,
-        skip: limit ? (page - 1) * limit : 0
+        skip: limit ? (page - 1) * limit : 0,
+        // Count the notes of each book in the same query (a COUNT per book in
+        // SQL), instead of loading every note just to count them.
+        // Each book then has an extra field: _count: { notes: 3 }.
+        include: { _count: { select: { notes: true } } },
       }),
       this.prisma.book.count({ where }), // same where, but no take/skip: count ALL matches
     ]);
 
-    return { items, total, page, limit: limit ?? null };
+    // Turn Prisma's _count: { notes: 3 } into a plain noteCount: 3, so the
+    // API doesn't expose how Prisma names things.
+    const books = items.map(({ _count, ...book }) => ({ ...book, noteCount: _count.notes }));
+
+    return { items: books, total, page, limit: limit ?? null };
   }
 
   // Counts per status for the status filter buttons. Uses the same search as findAll but ignores status,

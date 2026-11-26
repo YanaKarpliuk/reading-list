@@ -10,10 +10,14 @@ export const SORT = ['title', 'createdAt'] as const;
 export type BookStatus = (typeof STATUSES)[number];
 export type Sort = (typeof SORT)[number];
 
+// A book in the list of GET /api/books: the book plus how many notes it has,
+// so a client can show "Notes (3)" without loading the notes themselves.
+export type BookListItem = Book & { noteCount: number };
+
 // The response of GET /api/books: one page of books plus what a client
 // needs to show page buttons. limit is null when no limit was asked for.
 export interface BookPage {
-    items: Book[];
+    items: BookListItem[];
     total: number;
     page: number;
     limit: number | null;

@@ -18,6 +18,11 @@ const book = {
   createdAt: new Date('2026-01-01T00:00:00Z'),
 };
 
+// What findMany returns with include: { _count: ... }, and what findAll
+// turns it into.
+const bookFromPrisma = { ...book, _count: { notes: 2 } };
+const bookInList = { ...book, noteCount: 2 };
+
 // Only the Prisma methods BooksService calls. vi.fn() records every call,
 // so a test can check the arguments afterwards.
 function createPrismaMock() {
@@ -56,7 +61,7 @@ describe('BooksService', () => {
 
   describe('findAll', () => {
     it('turns page and limit into skip and take', async () => {
-      prisma.book.findMany.mockResolvedValue([book]);
+      prisma.book.findMany.mockResolvedValue([bookFromPrisma]);
       prisma.book.count.mockResolvedValue(11);
 
       const result = await service.findAll({ page: 3, limit: 5 });
@@ -65,11 +70,16 @@ describe('BooksService', () => {
       expect(prisma.book.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ take: 5, skip: 10 }),
       );
-      expect(result).toEqual({ items: [book], total: 11, page: 3, limit: 5 });
+      expect(result).toEqual({
+        items: [bookInList],
+        total: 11,
+        page: 3,
+        limit: 5,
+      });
     });
 
     it('returns every book when there is no limit', async () => {
-      prisma.book.findMany.mockResolvedValue([book]);
+      prisma.book.findMany.mockResolvedValue([bookFromPrisma]);
       prisma.book.count.mockResolvedValue(1);
 
       const result = await service.findAll({});
@@ -77,7 +87,27 @@ describe('BooksService', () => {
       expect(prisma.book.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ take: undefined, skip: 0 }),
       );
-      expect(result).toEqual({ items: [book], total: 1, page: 1, limit: null });
+      expect(result).toEqual({
+        items: [bookInList],
+        total: 1,
+        page: 1,
+        limit: null,
+      });
+    });
+
+    it("replaces Prisma's _count with a plain noteCount", async () => {
+      prisma.book.findMany.mockResolvedValue([bookFromPrisma]);
+      prisma.book.count.mockResolvedValue(1);
+
+      const { items } = await service.findAll({});
+
+      expect(prisma.book.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: { _count: { select: { notes: true } } },
+        }),
+      );
+      expect(items[0].noteCount).toBe(2);
+      expect(items[0]).not.toHaveProperty('_count');
     });
 
     it('searches title and author, and counts with the same filter', async () => {
